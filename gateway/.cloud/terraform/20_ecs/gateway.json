@@ -1,0 +1,21 @@
+[
+  {
+    "name": "${project}-${application}",
+    "image": "${ecr_url}",
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-region": "eu-west-3",
+        "awslogs-group": "/ecs/${project}/${application}",
+        "awslogs-stream-prefix": "${application}"
+      }
+    },
+    "portMappings": [
+      {
+        "containerPort": 8080,
+        "hostPort": 8080,
+        "protocol": "tcp"
+      }
+    ]
+  }
+]

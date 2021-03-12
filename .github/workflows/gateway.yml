@@ -1,0 +1,176 @@
+name: gateway
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  terraform-10-ecr:
+    defaults:
+      run:
+        working-directory: gateway/.cloud/terraform/10_ecr
+    runs-on: ubuntu-latest
+    outputs:
+      gateway-ecr-repository-url-output: ${{ steps.terraform-output.outputs.gateway-ecr-repository-url }}
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v2
+      - name: Setup Terraform
+        id: setup
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 0.14.7
+          terraform_wrapper: false
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check -recursive
+      - name: Terraform init without backend
+        id: init-without-backend
+        run: terraform init -backend=false
+      - name: Terraform validate
+        id: validate
+        run: terraform validate
+      - name: Terraform init
+        id: init
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -no-color -out=tfplan.out
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Terraform apply
+        id: apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -input=false tfplan.out
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        continue-on-error: true
+      - name: Store ECR repository URL in an output variable
+        id: terraform-output
+        run: echo "::set-output name=gateway-ecr-repository-url::$(terraform output gateway_ecr_repository_url)"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Create a new GitHub issue if the apply failed
+        id: create-github-issue-if-apply-failed
+        uses: actions/github-script@v3
+        if: github.ref == 'refs/heads/main' && steps.apply.outcome == 'failure'
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform plan which provoked a Terraform apply failure 📖 \`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>\n
+            \`\`\`${process.env.PLAN}\`\`\`
+            </details>\n
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.issues.create({
+              title: 'Terraform apply failed on main branch',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output,
+              labels: ['Triage', 'Bug']
+            })
+      - name: Terraform apply status
+        id: apply-status
+        if: github.ref == 'refs/heads/main' && steps.apply.outcome == 'failure'
+        run: exit 1
+
+  gateway-build:
+    defaults:
+      run:
+        working-directory: gateway
+    runs-on: ubuntu-latest
+    needs: terraform-10-ecr
+    container:
+      image: taufort/infrastructure-ubuntu-docker:latest
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v2
+      - name: Set environment variables
+        id: set-env-variables
+        run: |
+          echo "GATEWAY_ECR_REPOSITORY_URL=${{needs.terraform-10-ecr.outputs.gateway-ecr-repository-url-output}}" >> $GITHUB_ENV
+          echo "ECR_REGISTRY_URI=$(echo ${{needs.terraform-10-ecr.outputs.gateway-ecr-repository-url-output}} | cut -d/ -f1)" >> $GITHUB_ENV
+      - name: Print env variables
+        id: print-env-variables
+        run: |
+          echo GATEWAY_ECR_REPOSITORY_URL=${{ env.GATEWAY_ECR_REPOSITORY_URL }}
+          echo ECR_REGISTRY_URI=${{ env.ECR_REGISTRY_URI }}
+      - name: Run maven clean verify
+        id: maven-clean-verify
+        run: ./mvnw clean verify
+      - name: Build docker image
+        id: maven-build-image
+        run: ./mvnw -DskipTests spring-boot:build-image
+      - name: Login to ECR
+        id: ecr-login
+        run: aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin ${ECR_REGISTRY_URI}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Push the gateway docker image
+        id: docker-push
+        run: docker push ${GATEWAY_ECR_REPOSITORY_URL}:latest
+
+  gateway-deploy:
+    defaults:
+      run:
+        working-directory: gateway/.cloud/terraform/20_ecs
+    runs-on: ubuntu-latest
+    needs: gateway-build
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v2
+      - name: Setup Terraform
+        id: setup
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 0.14.7
+          terraform_wrapper: false
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check -recursive
+      - name: Terraform init without backend
+        id: init-without-backend
+        run: terraform init -backend=false
+      - name: Terraform validate
+        id: validate
+        run: terraform validate
+      - name: Terraform init
+        id: init
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -no-color -out=tfplan.out
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Terraform apply
+        id: apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -input=false tfplan.out
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        continue-on-error: true
