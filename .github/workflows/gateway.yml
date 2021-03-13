@@ -15,7 +15,7 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 jobs:
-  terraform-10-ecr:
+  gateway-ecr:
     defaults:
       run:
         working-directory: gateway/.cloud/terraform/10_ecr
@@ -32,24 +32,10 @@ jobs:
         with:
           terraform_version: 0.14.7
           terraform_wrapper: false
-      - name: Terraform Format
-        id: fmt
-        run: terraform fmt -check -recursive
-      - name: Terraform init without backend
-        id: init-without-backend
-        run: terraform init -backend=false
-      - name: Terraform validate
-        id: validate
-        run: terraform validate
-      - name: Terraform init
-        id: init
-        run: terraform init
-      - name: Terraform plan
-        id: plan
-        run: terraform plan -no-color -out=tfplan.out
-      - name: Terraform apply
-        id: apply
-        run: terraform apply -input=false tfplan.out
+      - name: Run Terraform workflow
+        uses: ./.github/actions/terraform-workflow
+        with:
+          working-directory: 'gateway/.cloud/terraform/10_ecr'
       - name: Store ECR repository URL in an output variable
         id: terraform-output
         run: echo "::set-output name=gateway-ecr-repository-url::$(terraform output gateway_ecr_repository_url)"
@@ -59,7 +45,7 @@ jobs:
       run:
         working-directory: gateway
     runs-on: ubuntu-latest
-    needs: terraform-10-ecr
+    needs: gateway-ecr
     container:
       image: taufort/infrastructure-ubuntu-docker:latest
     steps:
@@ -69,8 +55,8 @@ jobs:
       - name: Set environment variables
         id: set-env-variables
         run: |
-          echo "GATEWAY_ECR_REPOSITORY_URL=${{needs.terraform-10-ecr.outputs.gateway-ecr-repository-url-output}}" >> $GITHUB_ENV
-          echo "ECR_REGISTRY_URI=$(echo ${{needs.terraform-10-ecr.outputs.gateway-ecr-repository-url-output}} | cut -d/ -f1)" >> $GITHUB_ENV
+          echo "GATEWAY_ECR_REPOSITORY_URL=${{needs.gateway-ecr.outputs.gateway-ecr-repository-url-output}}" >> $GITHUB_ENV
+          echo "ECR_REGISTRY_URI=$(echo ${{needs.gateway-ecr.outputs.gateway-ecr-repository-url-output}} | cut -d/ -f1)" >> $GITHUB_ENV
       - name: Print env variables
         id: print-env-variables
         run: |
@@ -105,21 +91,7 @@ jobs:
         with:
           terraform_version: 0.14.7
           terraform_wrapper: false
-      - name: Terraform Format
-        id: fmt
-        run: terraform fmt -check -recursive
-      - name: Terraform init without backend
-        id: init-without-backend
-        run: terraform init -backend=false
-      - name: Terraform validate
-        id: validate
-        run: terraform validate
-      - name: Terraform init
-        id: init
-        run: terraform init
-      - name: Terraform plan
-        id: plan
-        run: terraform plan -no-color -out=tfplan.out
-      - name: Terraform apply
-        id: apply
-        run: terraform apply -input=false tfplan.out
+      - name: Run Terraform workflow
+        uses: ./.github/actions/terraform-workflow
+        with:
+          working-directory: 'gateway/.cloud/terraform/20_ecs'

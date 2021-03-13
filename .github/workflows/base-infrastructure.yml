@@ -30,21 +30,11 @@ jobs:
         with:
           terraform_version: 0.14.7
           terraform_wrapper: false
-      - name: Terraform Format
-        id: fmt
-        run: terraform fmt -check -recursive
-      - name: Terraform init without backend
-        id: init-without-backend
-        run: terraform init -backend=false
-      - name: Terraform validate
-        id: validate
-        run: terraform validate
-      - name: Terraform init
-        id: init
-        run: terraform init
-      - name: Terraform plan
-        id: plan
-        run: terraform plan -no-color -out=tfplan.out
+      - name: Run Terraform workflow
+        uses: ./.github/actions/terraform-workflow
+        with:
+          working-directory: 'base-infrastructure/.cloud/terraform'
+          apply: 'false'
       - name: Terraform apply
         id: apply
         if: github.ref == 'refs/heads/main'

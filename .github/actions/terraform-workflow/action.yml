@@ -1,0 +1,50 @@
+name: 'Terraform workflow'
+author: Timothée Aufort
+description: 'A common workflow of Terraform commands'
+inputs:
+  working-directory:
+    description: 'Working directory for this action'
+    required: false
+    default: '.'
+  apply:
+    description: 'Do you want to apply the Terraform plan at the end of the process?'
+    required: false
+    default: 'true'
+runs:
+  using: "composite"
+  steps:
+    - name: Terraform Format
+      id: fmt
+      run: terraform fmt -check -recursive
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: Terraform init without backend
+      id: init-without-backend
+      run: terraform init -backend=false
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: Terraform validate
+      id: validate
+      run: terraform validate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: Terraform init
+      id: init
+      run: terraform init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: Terraform plan
+      id: plan
+      run: terraform plan -no-color -out=tfplan.out
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: Terraform apply
+      id: apply
+      run: |
+        if [ ${{ inputs.apply }} = "true" ]; then
+          terraform apply -input=false tfplan.out
+        else
+          echo 'User chose not to apply the Terraform plan stored in tfplan.out'
+        fi
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
