@@ -10,6 +10,10 @@ defaults:
   run:
     shell: bash
 
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 jobs:
   terraform-10-ecr:
     defaults:
@@ -40,27 +44,15 @@ jobs:
       - name: Terraform init
         id: init
         run: terraform init
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Terraform plan
         id: plan
         run: terraform plan -no-color -out=tfplan.out
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Terraform apply
         id: apply
         run: terraform apply -input=false tfplan.out
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Store ECR repository URL in an output variable
         id: terraform-output
         run: echo "::set-output name=gateway-ecr-repository-url::$(terraform output gateway_ecr_repository_url)"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
   gateway-build:
     defaults:
@@ -93,9 +85,6 @@ jobs:
       - name: Login to ECR
         id: ecr-login
         run: aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin ${ECR_REGISTRY_URI}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Push the gateway docker image
         id: docker-push
         run: docker push ${GATEWAY_ECR_REPOSITORY_URL}:latest
@@ -128,18 +117,9 @@ jobs:
       - name: Terraform init
         id: init
         run: terraform init
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Terraform plan
         id: plan
         run: terraform plan -no-color -out=tfplan.out
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Terraform apply
         id: apply
         run: terraform apply -input=false tfplan.out
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
