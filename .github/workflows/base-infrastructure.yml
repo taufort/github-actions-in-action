@@ -55,3 +55,30 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         continue-on-error: true
+      - name: Create a new GitHub issue if the apply failed
+        id: create-github-issue-if-apply-failed
+        uses: actions/github-script@v3
+        if: github.ref == 'refs/heads/main' && steps.apply.outcome == 'failure'
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform plan which provoked a Terraform apply failure 📖 \`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>\n
+            \`\`\`${process.env.PLAN}\`\`\`
+            </details>\n
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.issues.create({
+              title: 'Terraform apply failed on main branch',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output,
+              labels: ['Triage', 'Bug']
+            })
+      - name: Terraform apply status
+        id: apply-status
+        if: github.ref == 'refs/heads/main' && steps.apply.outcome == 'failure'
+        run: exit 1
